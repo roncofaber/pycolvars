@@ -1,3 +1,2 @@
 include pyproject.toml
 include LICENSE
-include LICENSE-MEPSAND

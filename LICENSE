@@ -20,8 +20,3 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
----
-
-NOTE: pycolvars/min_energy_path/MEPSAnd_ASM.py is a third-party vendored
-file distributed under the GNU General Public License v3, NOT this MIT
-license. See LICENSE-MEPSAND for details.

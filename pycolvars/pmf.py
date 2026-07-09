@@ -22,7 +22,7 @@ import warnings
 import itertools
 
 # MPS
-import pycolvars.min_energy_path.MEPSAnd_ASM as mep
+import pycolvars.min_energy_path as mep
 import pycolvars._utilities as aux
 from .plotting.plot_functions import plot_colvars_data
 from .io.filefinder import find_most_likely_colvars_file

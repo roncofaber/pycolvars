@@ -15,9 +15,15 @@ split out as a standalone tool.
 pip install -e .
 ```
 
-## Note on `min_energy_path`
+## Minimum energy path algorithm
 
-`pycolvars/min_energy_path/MEPSAnd_ASM.py` is a vendored copy of
-[MEPSAnd](https://doi.org/10.1093/bioinformatics/btz684) by Marcos-Alcalde et
-al., distributed under the GPLv3 license (see `LICENSE-MEPSAND`), separate
-from the MIT license covering the rest of this repository.
+`pycolvars.min_energy_path` finds the path between two basins on an energy
+surface that minimises the maximum energy barrier crossed (the minimax / bottleneck
+path). It uses the Minimum Spanning Tree of the grid connectivity graph (edge
+weight = max endpoint energy), which provably yields the optimal minimax path.
+k-th alternative paths are found by iteratively removing the bottleneck edge
+of the previous best path and recomputing.
+
+This is a native implementation using `networkx`. It replaces an earlier
+vendored copy of [MEPSAnd](https://doi.org/10.1093/bioinformatics/btz684) by
+Marcos-Alcalde et al.
