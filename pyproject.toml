@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pycolvars"
+dynamic = ["version"]
+description = "Python tools to post-process and analyze metadynamics / collective variable data"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Fabrice Roncoroni", email = "fabrice.roncoroni@gmail.com"}
+]
+keywords = ["metadynamics", "collective variables", "free energy", "molecular dynamics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20.0",
+    "scipy>=1.7.0",
+    "ase>=3.20.0",
+    "pandas>=1.3.0",
+    "dill>=0.3.0",
+    "matplotlib>=3.3.0",
+    "seaborn>=0.11.0",
+    "colorcet>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/roncofaber/pycolvars"
+Repository = "https://github.com/roncofaber/pycolvars.git"
+"Bug Reports" = "https://github.com/roncofaber/pycolvars/issues"
+
+[tool.setuptools.packages.find]
+include = ["pycolvars*"]
+
+[tool.setuptools.package-data]
+pycolvars = ["*.txt", "*.md"]
+
+[tool.setuptools.dynamic]
+version = {attr = "pycolvars.__version__"}
