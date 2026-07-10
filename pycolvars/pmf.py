@@ -17,9 +17,11 @@ from scipy.signal import savgol_filter
 # os and stuff
 import os
 import glob
-import dill
 import warnings
 import itertools
+import json
+import zipfile
+import io
 
 # MPS
 import pycolvars.min_energy_path as mep
@@ -47,38 +49,120 @@ class PMF_obj():
     #     warnings.warn('No member "%s" contained in settings config.' % name)
     #     return ''
 
-    # save object as pkl file
-    def save_object(self, oname=None):
+    # ------------------------------------------------------------------ #
+    # Serialization                                                       #
+    # ------------------------------------------------------------------ #
 
+    # scalar/string fields that go into metadata.json
+    _META_KEYS = [
+        "savename", "pmf_path", "pmf_name", "pmf_file", "input_file",
+        "ndim", "ax_size", "ax_bounds", "ax_width",
+        "mps_initialized", "colvars_pmf_check",
+        "metadyn_name", "colvars_name", "other_args",
+        "main_dir", "n_replica",
+    ]
+
+    def save_object(self, oname=None):
+        """Save to a safe ZIP-based .pcv bundle (no pickle)."""
         if oname is None:
             oname = self.savename
 
-        if oname.endswith(".pkl"):
-            oname =  self.pmf_path + "/" + oname
-        else:
-            oname = self.pmf_path + "/" + oname.split(".")[-1] + ".pkl"
+        # normalise extension
+        if not oname.endswith(".pcv"):
+            oname = os.path.splitext(oname)[0] + ".pcv"
+        if not os.path.isabs(oname):
+            oname = self.pmf_path + "/" + oname
 
-        with open(oname, 'wb') as fout:
-            dill.dump(self, fout)
+        # collect metadata (only keys that actually exist on this instance)
+        meta = {k: getattr(self, k) for k in self._META_KEYS
+                if hasattr(self, k)}
+        meta["_format_version"] = 1
+        meta["_class"] = type(self).__name__
+
+        # collect numpy arrays
+        arrays = {}
+        if hasattr(self, "raw_data"):
+            arrays["raw_data"] = self.raw_data
+        if hasattr(self, "_main_pmf"):
+            arrays["_main_pmf"] = self._main_pmf
+        if hasattr(self, "grid"):
+            arrays["grid"] = self.grid
+        if hasattr(self, "axes"):
+            for ii, ax in enumerate(self.axes):
+                arrays[f"axis_{ii}"] = ax
+            meta["_n_axes"] = len(self.axes)
+        for key in ("_all_pmfs", "part_pmf", "pmf_list"):
+            if hasattr(self, key) and getattr(self, key) is not None:
+                arrays[key] = np.asarray(getattr(self, key))
+
+        # write ZIP bundle
+        buf = io.BytesIO()
+        np.savez_compressed(buf, **arrays)
+        npz_bytes = buf.getvalue()
+
+        with zipfile.ZipFile(oname, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("metadata.json", json.dumps(meta))
+            zf.writestr("arrays.npz", npz_bytes)
 
         print("Saved everything as {}".format(oname))
-        return
 
-    # restart object from pkl file previously saved
+    @classmethod
+    def _load_bundle(cls, path, expected_class, expected_pkl_type):
+        """Reconstruct a PMF_obj subclass from a .pcv bundle."""
+        obj = cls.__new__(cls)
+        obj.map_handler     = None
+        obj.mps_initialized = False
+
+        with zipfile.ZipFile(path, "r") as zf:
+            meta = json.loads(zf.read("metadata.json"))
+            buf  = io.BytesIO(zf.read("arrays.npz"))
+
+        assert meta.get("_class") == expected_class, \
+            f"Bundle is a {meta.get('_class')}, expected {expected_class}"
+
+        npz = np.load(buf, allow_pickle=False)
+
+        # restore metadata fields
+        for k, v in meta.items():
+            if not k.startswith("_"):
+                setattr(obj, k, v)
+
+        # restore arrays
+        for key in ("raw_data", "_main_pmf", "grid", "_all_pmfs", "part_pmf"):
+            if key in npz:
+                setattr(obj, key, npz[key])
+
+        if "_n_axes" in meta:
+            obj.axes = [npz[f"axis_{ii}"] for ii in range(meta["_n_axes"])]
+
+        if "pmf_list" in npz:
+            obj.pmf_list = list(npz["pmf_list"])
+
+        assert hasattr(obj, "colvars_pmf_check"), "Cannot load non compatible object!"
+        assert obj.colvars_pmf_check == expected_pkl_type, \
+            "Wrong PMF type — check single vs multiple replica!"
+
+        return obj
+
     def restart_pmf_from_pickle(self, filein, pkl_type):
-
-        # open previously generated gpw file
-        with open(filein, "rb") as fin:
-            restart = dill.load(fin)
-
-        self.__dict__ = restart.__dict__.copy()
-
-        assert hasattr(self, "colvars_pmf_check"), "Cannot load non compatible object!"
-
-        assert self.colvars_pmf_check == pkl_type, "Wrong PMF? Check single"\
-            "or multiple replica!"
-
-        return
+        """Load from a .pcv bundle or fall back to a legacy .pkl file."""
+        if filein.endswith(".pcv"):
+            loaded = self._load_bundle(filein, type(self).__name__, pkl_type)
+            self.__dict__ = loaded.__dict__
+        else:
+            import dill
+            warnings.warn(
+                f"Loading {filein} with dill (pickle). "
+                "Only load .pkl files from sources you trust. "
+                "Re-save with save_object() to get a safe .pcv bundle.",
+                UserWarning, stacklevel=2,
+            )
+            with open(filein, "rb") as fin:
+                restart = dill.load(fin)
+            self.__dict__ = restart.__dict__.copy()
+            assert hasattr(self, "colvars_pmf_check"), "Cannot load non compatible object!"
+            assert self.colvars_pmf_check == pkl_type, \
+                "Wrong PMF type — check single vs multiple replica!"
 
     # read a N ndimal pmf file
     def read_colvars_data(self, pmf_file, simple=False, assign=False):
@@ -453,7 +537,7 @@ class SingleReplica(PMF_obj):
                  do_mps      = False, # perform MPS analysis initalization
                  force_mps   = False, # force to redo MPS even if already done
                  save        = False,
-                 savename    = "pmf_object.pkl"
+                 savename    = "pmf_object.pcv"
                  ):
 
         self.savename = savename
@@ -471,12 +555,11 @@ class SingleReplica(PMF_obj):
         self.pmf_name = pmf_name
         self.pmf_file = pmf_path + "/" + pmf_name
 
-        # check if it's a new wfs file or a already processed pkl file
+        # check if it's a new wfs file or a already processed bundle/pkl file
         if self.pmf_name.endswith(".pmf"):
-            # read COLVARS data
             self.initialize_single_replica(average_pmf, nframes)
-
-        # restart from pickle file
+        elif self.pmf_name.endswith(".pcv"):
+            self.restart_pmf_from_pickle(self.pmf_file, "single")
         elif self.pmf_name.endswith(".pkl"):
             self.restart_pmf_from_pickle(self.pmf_file, "single")
 
@@ -529,7 +612,7 @@ class MultipleReplica(PMF_obj):
                  do_mps      = False, # perform MPS analysis initalization
                  force_mps   = False, # force to redo MPS even if already done
                  save        = False,
-                 savename    = "pmf_mr_object.pkl",
+                 savename    = "pmf_mr_object.pcv",
                  average_pmf = True
                  ):
 
@@ -537,12 +620,11 @@ class MultipleReplica(PMF_obj):
         self.pmf_path  = pmf_path
         self.pmf_name  = pmf_name
 
-        # check if it's a new wfs file or a already processed pkl file
-        # restart from pickle file
-        if pmf_name.endswith(".pkl"):
-            self.restart_pmf_from_pickle(self.pmf_file, "multiple")
+        if pmf_name.endswith(".pcv"):
+            self.restart_pmf_from_pickle(pmf_path + "/" + pmf_name, "multiple")
+        elif pmf_name.endswith(".pkl"):
+            self.restart_pmf_from_pickle(pmf_path + "/" + pmf_name, "multiple")
         elif pmf_name.endswith(".pmf"):
-            # read COLVARS data
             self.initialize_multiple_replica(pmf_path, pmf_name, average_pmf)
 
         # do mps analysis to get barrier heights
