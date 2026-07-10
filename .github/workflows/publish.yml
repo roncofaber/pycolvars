@@ -18,13 +18,7 @@ jobs:
       - name: Verify tag matches package version
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          PKG_VERSION=$(python3 -c "
-with open('pycolvars/__init__.py') as f:
-    for line in f:
-        if line.startswith('__version__'):
-            print(line.split('=')[1].strip().strip('\"').strip(\"'\"))
-            break
-")
+          PKG_VERSION=$(grep -m1 "__version__" pycolvars/__init__.py | tr -d '"' | tr -d "'" | awk -F= '{print $2}' | tr -d ' ')
           echo "Tag:     v$TAG_VERSION"
           echo "Package: $PKG_VERSION"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
